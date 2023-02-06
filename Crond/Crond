@@ -1,0 +1,2 @@
+# For Private
+0 16 * * * /bin/python /korea/onlykorea.py
