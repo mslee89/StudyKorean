@@ -12,3 +12,20 @@
 3. Crond/Crond 파일을 /var/spool/cron 에 root 라는 파일로 복사 혹은 내용을 `crontab -e` 명령어를 통해 내용 추가
 
 ## 동작 화면
+![StudyKoreaHelp.png](./Images/StudyKoreaHelp.png)   
+- help 명령어를 통해 알람 On/Off 및 등록 가능   
+
+![StudyKoreaMsg.png](./Images/StudyKoreaMsg.png)   
+- 알람 수신 시 받는 메시지 형태
+
+## 개선 되어야 할 부분
+- 전체
+  - Token, Username, Password 등 config.py 으로 분리
+  - 불필요한 코드 및 라이브러리 삭제
+- daemon.py 
+  - quiz 개발 진행 (멈춘 상태)
+  - while 문 제거
+- onlykorea.py
+  - Crond 을 제외 후 schedule, apscheduler 등으로 자체 스케줄러 추가 필요
+  
+~~하지만 와이프가 한국어 수준이 높아져서 필요없어짐.. 이제 운영도 멈춘 상태~~
