@@ -1,114 +1,96 @@
 # -*- coding: utf-8 -*-
-from apscheduler.schedulers.blocking import BlockingScheduler
-from telepot.loop import MessageLoop
-import pymysql, telepot, time, random
-from time import sleep
+import time
+import random
 import logging
-from socket import error as SocketError
-import errno, sys
+import pymysql
+import telepot
+from telepot.loop import MessageLoop
 
+# Telegram Bot Token
 token = '<Telegram Token>'
 bot = telepot.Bot(token)
 
+# Database Connection Function
+def get_db_connection():
+    return pymysql.connect(
+        host='<DB IP Address>',
+        user='<DB User>',
+        password='<DB User Password>',
+        db='<DB Name>',
+        charset='utf8',
+        autocommit=True
+    )
 
-def quiz(msg):
-    telegram_conn = pymysql.connect(host='<DB IP Address>', user='<DB User>', password='<DB User Password>', db='<DB Name>', charset='utf8')
-    telegram_conn.autocommit(True)
-    cur = telegram_conn.cursor()
-    content_type, chat_type, chat_id = telepot.glance(msg)
+# Quiz Function
+def quiz(chat_id):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute('SELECT num FROM korean ORDER BY num DESC LIMIT 1;')
+            max_num = cur.fetchone()[0]
+            random_num = random.randint(1, max_num)
 
-    GET_NUM = 'SELECT num FROM korean ORDER BY num DESC LIMIT 1;'
-    RESULT_NUM = cur.execute(GET_NUM)
-    NUM = cur.fetchall()
-    RANDOM_NUM = random.randrange(1, NUM[0][0])
+            cur.execute('SELECT k_words FROM korean WHERE num = %s;', (random_num,))
+            question = cur.fetchone()[0]
 
-    GET_QUESTION = 'SELECT k_words FROM korean WHERE num = %s;' % RANDOM_NUM
-    RESULT_QUESTION = cur.execute(GET_QUESTION)
-    QUESTION = cur.fetchall()
+            cur.execute('SELECT r_words FROM korean WHERE num = %s;', (random_num,))
+            answer = cur.fetchone()[0]
 
-    GET_ANSWER = 'SELECT r_words FROM korean WHERE num = %s;' % RANDOM_NUM
-    RESULT_ANSWER = cur.execute(GET_ANSWER)
-    ANSWER = cur.fetchall()
-    if ANSWER[0][0] == 'NULL':
-        GET_ANSWER = 'SELECT e_words FROM korean WHERE num = %s;' % RANDOM_NUM
-        RESULT_ANSWER = cur.execute(GET_ANSWER)
-        ANSWER = cur.fetchall()
-        bot.sendMessage(chat_id, text="What is %s ?\nTell me in English" % QUESTION[0][0])
-        sys.exit(0)
-    else:
-        bot.sendMessage(chat_id, text="What is %s ?\nTell me in Russian" % QUESTION[0][0])
-        sys.exit(0)
+            if answer == 'NULL':
+                cur.execute('SELECT e_words FROM korean WHERE num = %s;', (random_num,))
+                answer = cur.fetchone()[0]
+                bot.sendMessage(chat_id, text=f"What is {question} ?\nTell me in English")
+            else:
+                bot.sendMessage(chat_id, text=f"What is {question} ?\nTell me in Russian")
 
-    FINISHED = 0
-    bot.sendMessage(chat_id, text=ANSWER[0][0])
-    while FINISHED == 1:
-        time.sleep(1)
-        if content_type == ANSWER[0][0]:
-            FINISHED = 1
-            bot.sendMessage(chat_id, text="Right!")
-        else:
-            bot.sendMessage(chat_id, text="Wrong!")
-
-
+# Command Handler
 def on_chat_message(msg):
-    telegram_conn = pymysql.connect(host='<DB IP Address>', user='<DB User>', password='<DB User Password>', db='<DB Name>', charset='utf8')
-    telegram_conn.autocommit(True)
-    cur = telegram_conn.cursor()
     content_type, chat_type, chat_id = telepot.glance(msg)
+    if content_type != 'text':
+        return
+    
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            command = msg['text']
+            
+            if command == '/registry':
+                cur.execute("INSERT INTO user (user_id) SELECT %s FROM DUAL WHERE NOT EXISTS (SELECT user_id FROM user WHERE user_id = %s) LIMIT 1;", (chat_id, chat_id))
+                bot.sendMessage(chat_id, text="Your ID registration completed." if cur.rowcount else "Your ID is already registered.")
+            
+            elif command == '/enable':
+                cur.execute("UPDATE user SET user_enable = '1' WHERE user_id = %s;", (chat_id,))
+                bot.sendMessage(chat_id, text="The message receiving alarm Enabled." if cur.rowcount else "The message receiving alarm already Enabled.")
+            
+            elif command == '/disable':
+                cur.execute("UPDATE user SET user_enable = '0' WHERE user_id = %s;", (chat_id,))
+                bot.sendMessage(chat_id, text="The message receiving alarm Disabled." if cur.rowcount else "The message receiving alarm already Disabled.")
+            
+            elif command == '/init':
+                if chat_id == <관리자 Chat_ID>:
+                    cur.execute("UPDATE korean SET count = '0' WHERE count = '1';")
+                    bot.sendMessage(chat_id, text="Initialization completed.")
+                else:
+                    bot.sendMessage(chat_id, text="You are not an admin.")
+            
+            elif command == '/help':
+                help_msg = """
+/registry   - Register your ID to receive alarms
+/enable     - Enable alarms
+/disable    - Disable alarms
+/id         - Show your chat ID
+/help       - Show this help message
+/init       - Reset all words (Admin only)
+/quiz       - Start a quiz
+"""
+                bot.sendMessage(chat_id, text=help_msg)
+            
+            elif command == '/id':
+                bot.sendMessage(chat_id, text=f"Your ID is {chat_id}")
+            
+            elif command == '/quiz':
+                quiz(chat_id)
 
-    help_msg = '''
-/registry   - Registry an your id to receive an alarm
-/enable     - Enable alarm 
-/disable    - Disable alarm
-/id           - show your chat id
-/help         - print this help message
-/init         - Initialization all words (Only admin)
-  '''
-
-    if content_type == 'text':
-        if msg['text'] == '/registry':
-            sql_registry = "INSERT INTO user (user_id) SELECT '%s' FROM DUAL WHERE NOT EXISTS (SELECT user_id FROM user WHERE user_id = '%s') LIMIT 1;" % (
-            chat_id, chat_id)
-            result = cur.execute(sql_registry)
-            if result == 0:
-                bot.sendMessage(chat_id, text="Your ID is already registered.")
-            else:
-                bot.sendMessage(chat_id, text="Your ID registration completed.")
-        if msg['text'] == '/enable':
-            sql_enable = "UPDATE user SET user_enable = '1' WHERE user_id = '%s';" % chat_id
-            result = cur.execute(sql_enable)
-            if result == 0:
-                bot.sendMessage(chat_id, text="The message receiving alarm already Enabled.")
-            else:
-                bot.sendMessage(chat_id, text="The message receiving alarm Enabled.")
-        if msg['text'] == '/disable':
-            sql_disable = "UPDATE user SET user_enable = '0' WHERE user_id = '%s';" % chat_id
-            result = cur.execute(sql_disable)
-            if result == 0:
-                bot.sendMessage(chat_id, text="The message receiving alarm already Disabled.")
-            else:
-                bot.sendMessage(chat_id, text="The message receiving alarm Disabled.")
-        if msg['text'] == '/init':
-            if chat_id == <관리자 Chat_ID>:
-                sql_init = "UPDATE korean SET count = '0' WHERE count = '1';"
-                cur.execute(sql_init)
-                bot.sendMessage(chat_id, text="Initialization completed.")
-            else:
-                bot.sendMessage(chat_id, text="You are not a admin.")
-        if msg['text'] == '/help':
-            bot.sendMessage(chat_id, text="%s" % help_msg)
-        if msg['text'] == '/id':
-            bot.sendMessage(chat_id, text="Your ID is %s" % chat_id)
-        if msg['text'] == '/msg':
-            bot.sendMessage(chat_id, text=msg)
-        if msg['text'] == '/quiz':
-            quiz(msg)
-
-    telegram_conn.close()
-
+# Start Bot
 MessageLoop(bot, on_chat_message).run_as_thread()
-
 logging.basicConfig()
-
 while True:
     time.sleep(1)
